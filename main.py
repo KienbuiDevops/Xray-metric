@@ -1,48 +1,66 @@
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.core import patch_all
-import time
+#!/usr/bin/env python3
+"""
+AWS X-Ray Prometheus Exporter - Main Entry Point
+"""
+import argparse
 import logging
-import boto3
+from http.server import HTTPServer
 
-# Thiết lập logging chi tiết
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-logging.getLogger('aws_xray_sdk').setLevel(logging.DEBUG)
+from collector import XRayMetricsCollector
+from handlers import create_handler
 
-# Đặt region cho boto3
-session = boto3.session.Session(region_name='ap-southeast-1')
-xray_client = session.client('xray')
-
-# Cấu hình X-Ray
-xray_recorder.configure(
-    service='my-python-service',
-    daemon_address='xray-deamon-test.gotit.vn:443',
-    context_missing='LOG_ERROR'
+# Thiết lập logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger('xray-exporter')
 
-patch_all()
-
-# Bắt đầu ghi trace
-@xray_recorder.capture('my_python_service_operation')
-def do_work():
-    xray_recorder.put_annotation('env', 'test')
-    xray_recorder.put_metadata('description', 'Test trace from Python')
-    logger.info("Doing some work...")
-    time.sleep(1)
-    logger.info("Work completed!")
-
-if __name__ == "__main__":
-    logger.info("Starting X-Ray tracing...")
-    logger.info("X-Ray configured with daemon address: 172.21.1.63:2000")
+def main():
+    """
+    Entrypoint cho script
+    """
+    parser = argparse.ArgumentParser(description='X-Ray Prometheus Exporter')
+    parser.add_argument('--port', type=int, help='Port to listen on', default=9092)
+    parser.add_argument('--region', type=str, help='AWS Region', default=None)
+    parser.add_argument('--profile', type=str, help='AWS Profile', default=None)
+    parser.add_argument('--time-window', type=int, help='Time window in minutes', default=1)
+    parser.add_argument('--data-dir', type=str, help='Directory to store state data', default=None)
+    parser.add_argument('--log-level', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], 
+                      help='Log level', default='INFO')
     
-    with xray_recorder.in_segment('xray') as segment:
-        if segment:
-            segment.service = {'name': 'my-python-service', 'version': '1.0'}  # Thêm thông tin service
-            segment.put_annotation('step', 'start')
-            logger.info(f"Segment ID: {segment.id}")
-            do_work()
-            segment.put_annotation('step', 'end')
-        else:
-            logger.error("Failed to create segment!")
+    args = parser.parse_args()
     
-    logger.info("Trace sent to X-Ray daemon!")
+    # Thiết lập log level
+    logging.getLogger().setLevel(getattr(logging, args.log_level))
+    
+    # Khởi tạo collector
+    collector = XRayMetricsCollector(
+        region=args.region,
+        profile=args.profile,
+        time_window_minutes=args.time_window,
+        data_dir=args.data_dir
+    )
+    
+    # Khởi tạo metrics ban đầu
+    try:
+        collector.get_metrics()
+    except Exception as e:
+        logger.error(f"Error initializing metrics: {str(e)}")
+    
+    # Tạo HTTP server
+    handler = create_handler(collector)
+    server = HTTPServer(('0.0.0.0', args.port), handler)
+    
+    logger.info(f"Starting X-Ray Prometheus Exporter on port {args.port}")
+    logger.info(f"Configuration: region={args.region or 'default'}, time-window={args.time_window}m")
+    logger.info(f"Metrics endpoint: http://localhost:{args.port}/metrics")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down server")
+        server.server_close()
+
+if __name__ == '__main__':
+    main()
