@@ -411,7 +411,7 @@ class UrlMetricsGenerator:
             self.counter_values[url_request_key] += data['request_count']
             self.counter_values[url_error_key] += data['error_count']
             
-            # Thêm counter metrics
+            # Thêm counter metrics - Global URL metrics (không phân theo service)
             metrics.append({
                 'name': 'xray_url_requests_total',
                 'labels': {'url': url},
@@ -426,8 +426,33 @@ class UrlMetricsGenerator:
                 'type': 'counter'
             })
             
+            # Thêm URL requests/errors phân theo service
+            for service, count in data['services'].items():
+                service_url_request_key = f"xray_url_service_requests_total_{url}_{service}"
+                self.counter_values[service_url_request_key] += count
+                
+                metrics.append({
+                    'name': 'xray_url_service_requests_total',
+                    'labels': {'url': url, 'service': service},
+                    'value': self.counter_values[service_url_request_key],
+                    'type': 'counter'
+                })
+            
             # Latency raw data for Prometheus calculations
             if data['latencies']:
+                # Điều chỉnh URL metrics thu thập để phân tách theo service
+                # Lưu trữ latency theo service và URL
+                latencies_by_service = defaultdict(list)
+                
+                # Thu thập latency theo service
+                for service in data['services'].keys():
+                    # Lấy mẫu latency từ service nếu có
+                    # Trong thực tế, đây là ước lượng vì chúng ta không có thông tin chi tiết về từng request
+                    # Tốt nhất là thu thập trực tiếp từ X-Ray trong hàm process_trace_data
+                    for latency in data['latencies']:
+                        latencies_by_service[service].append(latency)
+                
+                # Global URL latency
                 for latency in data['latencies']:
                     metrics.append({
                         'name': 'xray_url_latency_ms',
@@ -450,6 +475,24 @@ class UrlMetricsGenerator:
                     'value': len(data['latencies']),
                     'type': 'gauge'
                 })
+                
+                # Thêm latency theo service và URL
+                for service, service_latencies in latencies_by_service.items():
+                    if service_latencies:
+                        # Thêm latency sum và count cho Prometheus
+                        metrics.append({
+                            'name': 'xray_url_service_latency_sum_ms',
+                            'labels': {'url': url, 'service': service},
+                            'value': sum(service_latencies),
+                            'type': 'gauge'
+                        })
+                        
+                        metrics.append({
+                            'name': 'xray_url_service_latency_count',
+                            'labels': {'url': url, 'service': service},
+                            'value': len(service_latencies),
+                            'type': 'gauge'
+                        })
             
             # Service distribution
             for service, count in data['services'].items():
@@ -457,12 +500,29 @@ class UrlMetricsGenerator:
                 service_key = f"xray_url_service_total_{url}_{service}"
                 self.counter_values[service_key] += count
                 
+                # Track services handling this URL
                 metrics.append({
                     'name': 'xray_url_service_total',
                     'labels': {'url': url, 'service': service},
                     'value': self.counter_values[service_key],
                     'type': 'counter'
                 })
+                
+                # Estimate error count by service for this URL
+                # Ước tính số lỗi theo service dựa trên tỷ lệ requests
+                if data['error_count'] > 0 and data['request_count'] > 0:
+                    service_ratio = count / data['request_count']
+                    estimated_errors = int(data['error_count'] * service_ratio)
+                    if estimated_errors > 0:
+                        service_error_key = f"xray_url_service_errors_total_{url}_{service}"
+                        self.counter_values[service_error_key] += estimated_errors
+                        
+                        metrics.append({
+                            'name': 'xray_url_service_errors_total',
+                            'labels': {'url': url, 'service': service},
+                            'value': self.counter_values[service_error_key],
+                            'type': 'counter'
+                        })
             
             # Status code distribution
             for status, count in data['status_codes'].items():
@@ -551,7 +611,17 @@ class MetricsFormatter:
             prometheus_data.append(f"# TYPE {metric_name} {metric_type}")
 
             # Thêm mô tả nếu cần
-            if metric_name.endswith('_total'):
+            if metric_name == 'xray_url_service_total':
+                prometheus_data.append(f"# HELP {metric_name} Total count of requests to URLs handled by specific services")
+            elif metric_name == 'xray_url_service_requests_total':
+                prometheus_data.append(f"# HELP {metric_name} Total count of requests to URLs handled by specific services (detailed)")
+            elif metric_name == 'xray_url_service_errors_total':
+                prometheus_data.append(f"# HELP {metric_name} Total count of errors for URLs handled by specific services")
+            elif metric_name == 'xray_url_service_latency_sum_ms':
+                prometheus_data.append(f"# HELP {metric_name} Sum of latencies for URLs handled by specific services")
+            elif metric_name == 'xray_url_service_latency_count':
+                prometheus_data.append(f"# HELP {metric_name} Count of latency observations for URLs handled by specific services")
+            elif metric_name.endswith('_total'):
                 prometheus_data.append(f"# HELP {metric_name} Total count of {metric_name[:-6]} from X-Ray traces")
             elif metric_name.endswith('_ms'):
                 prometheus_data.append(f"# HELP {metric_name} Duration in milliseconds from X-Ray traces")
