@@ -525,15 +525,11 @@ class DependencyMetricsGenerator:
 
 class MetricsFormatter:
     """
-    Format metrics cho Prometheus với hỗ trợ timestamps
+    Format metrics cho Prometheus
     """
-    def format_metrics_for_prometheus(self, metrics, metrics_timestamps=None):
+    def format_metrics_for_prometheus(self, metrics):
         """
         Chuyển đổi metrics thành định dạng Prometheus
-        
-        :param metrics: List các metrics cần format
-        :param metrics_timestamps: Dict chứa timestamps cho mỗi metric (nếu có)
-        :return: String chứa metrics theo định dạng Prometheus
         """
         # Nhóm metrics theo tên để xuất hiệu quả hơn
         metrics_by_name_and_type = {}
@@ -541,24 +537,19 @@ class MetricsFormatter:
             name = metric['name']
             metric_type = metric.get('type', 'gauge')
             key = (name, metric_type)
-            
+
             if key not in metrics_by_name_and_type:
                 metrics_by_name_and_type[key] = []
-            
+
             metrics_by_name_and_type[key].append(metric)
-        
+
         prometheus_data = []
-        
-        # Thêm metadata về exporter vào metrics
-        prometheus_data.append("# HELP xray_exporter_info Information about the X-Ray Prometheus exporter")
-        prometheus_data.append("# TYPE xray_exporter_info gauge")
-        prometheus_data.append('xray_exporter_info{version="1.0.0"} 1')
-        
+
         # Chuyển đổi metrics sang định dạng Prometheus
         for (metric_name, metric_type), metric_items in metrics_by_name_and_type.items():
             # Thêm thông tin kiểu metric (gauge hoặc counter)
             prometheus_data.append(f"# TYPE {metric_name} {metric_type}")
-            
+
             # Thêm mô tả nếu cần
             if metric_name.endswith('_total'):
                 prometheus_data.append(f"# HELP {metric_name} Total count of {metric_name[:-6]} from X-Ray traces")
@@ -566,39 +557,21 @@ class MetricsFormatter:
                 prometheus_data.append(f"# HELP {metric_name} Duration in milliseconds from X-Ray traces")
             elif metric_name.endswith('_bytes'):
                 prometheus_data.append(f"# HELP {metric_name} Size in bytes from X-Ray traces")
-            elif metric_name.endswith('_count'):
-                prometheus_data.append(f"# HELP {metric_name} Count of observations for {metric_name[:-6]}")
-            elif metric_name.endswith('_sum'):
-                prometheus_data.append(f"# HELP {metric_name} Sum of values for {metric_name[:-4]}")
-            
-            # Thêm giá trị metric với timestamp nếu có
+
+            # Thêm giá trị metric
             for item in metric_items:
                 # Format labels
                 labels = item['labels']
                 labels_str = ','.join([f'{k}="{v}"' for k, v in labels.items() if v])
-                
-                # Lấy timestamp cho metric này nếu có
-                timestamp = item.get('timestamp')
-                if timestamp is None and metrics_timestamps:
-                    # Tạo key để tìm trong metrics_timestamps
-                    metric_key = f"{metric_name}_{'-'.join([f'{k}:{v}' for k, v in labels.items()])}"
-                    timestamp = metrics_timestamps.get(metric_key)
-                
-                # Format metric line với hoặc không có timestamp
+
                 if labels_str:
-                    if timestamp:
-                        prometheus_data.append(f'{metric_name}{{{labels_str}}} {item["value"]} {timestamp}')
-                    else:
-                        prometheus_data.append(f'{metric_name}{{{labels_str}}} {item["value"]}')
+                    prometheus_data.append(f'{metric_name}{{{labels_str}}} {item["value"]}')
                 else:
-                    if timestamp:
-                        prometheus_data.append(f'{metric_name} {item["value"]} {timestamp}')
-                    else:
-                        prometheus_data.append(f'{metric_name} {item["value"]}')
-        
+                    prometheus_data.append(f'{metric_name} {item["value"]}')
+
         # Thêm timestamp hiện tại
         timestamp = str(int(datetime.now().timestamp() * 1000))
         prometheus_data.append(f"# TIMESTAMP {timestamp}")
-        
+
         # Nối tất cả dòng với newlines
         return '\n'.join(prometheus_data)
