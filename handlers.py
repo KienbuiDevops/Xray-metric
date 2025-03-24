@@ -59,6 +59,7 @@ class PrometheusExporterHandler(BaseHTTPRequestHandler):
                     
                     <h2>Available Metrics:</h2>
                     <div class="metrics-list">
+                        <!-- Thay đổi phần hiển thị metrics trong trang chủ -->
                         <ul>
                             <li><code>xray_service_requests_total</code> <span class="metric-type">(counter)</span> - Total number of requests by service</li>
                             <li><code>xray_service_errors_total</code> <span class="metric-type">(counter)</span> - Total number of errors by service</li>
@@ -73,15 +74,15 @@ class PrometheusExporterHandler(BaseHTTPRequestHandler):
                             <li><code>xray_url_errors_total</code> <span class="metric-type">(counter)</span> - Total number of errors by URL</li>
                             <li><code>xray_url_error_rate</code> <span class="metric-type">(gauge)</span> - Error rate by URL</li>
                             <li><code>xray_url_latency_avg_ms</code> <span class="metric-type">(gauge)</span> - Average latency by URL</li>
-                            <li><code>xray_service_dependency_total</code> <span class="metric-type">(counter)</span> - Total calls between services</li>
-                            <li><code>xray_service_dependency_health</code> <span class="metric-type">(gauge)</span> - Health of service dependency</li>
-                            <li><code>xray_url_requests_total</code> <span class="metric-type">(counter)</span> - Total number of requests by URL</li>
-                            <li><code>xray_url_errors_total</code> <span class="metric-type">(counter)</span> - Total number of errors by URL</li>
-                            <li><code>xray_url_error_rate</code> <span class="metric-type">(gauge)</span> - Error rate by URL</li>
-                            <li><code>xray_url_latency_avg_ms</code> <span class="metric-type">(gauge)</span> - Average latency by URL</li>
+                            <li><code>xray_url_status_total</code> <span class="metric-type">(counter)</span> - HTTP status codes by URL</li>
+                            <li><code>xray_url_method_total</code> <span class="metric-type">(counter)</span> - HTTP methods by URL</li>
                             <li><code>xray_url_service_total</code> <span class="metric-type">(counter)</span> - Total number of requests by URL and service</li>
                             <li><code>xray_url_service_requests_total</code> <span class="metric-type">(counter)</span> - Total number of requests by URL and service (detailed)</li>
                             <li><code>xray_url_service_errors_total</code> <span class="metric-type">(counter)</span> - Total number of errors by URL and service</li>
+                            <li><code>xray_url_service_status_total</code> <span class="metric-type">(counter)</span> - HTTP status codes by URL and service</li>
+                            <li><code>xray_url_service_method_total</code> <span class="metric-type">(counter)</span> - HTTP methods by URL and service</li>
+                            <li><code>xray_service_dependency_total</code> <span class="metric-type">(counter)</span> - Total calls between services</li>
+                            <li><code>xray_service_dependency_health</code> <span class="metric-type">(gauge)</span> - Health of service dependency</li>
                         </ul>
                     </div>
                     
