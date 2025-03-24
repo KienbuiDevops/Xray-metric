@@ -74,6 +74,33 @@ scrape_configs:
 - Trang thông tin: http://localhost:9092/
 - Health check: http://localhost:9092/health
 
+### Grafana Dashboards
+
+Sử dụng các PromQL query sau để tạo dashboards trong Grafana:
+
+#### Dashboard Service-URL:
+
+```
+# Top URLs theo service
+topk(10, sum by (url, service) (xray_url_service_requests_total))
+
+# Latency trung bình theo URL và service
+sum by (url, service) (rate(xray_url_service_latency_sum_ms[5m])) / sum by (url, service) (rate(xray_url_service_latency_count[5m]))
+
+# Tỷ lệ lỗi theo URL và service
+sum by (url, service) (rate(xray_url_service_errors_total[5m])) / sum by (url, service) (rate(xray_url_service_requests_total[5m]))
+
+# HTTP status code theo URL và service
+sum by (url, service, status_code) (xray_url_service_status_total)
+```
+
+#### Heatmap Service-URL:
+
+```
+# Latency heatmap theo service và URL
+sum by (service, url) (rate(xray_url_service_latency_sum_ms[5m])) / sum by (service, url) (rate(xray_url_service_latency_count[5m]))
+```
+
 ## Metrics
 
 ### Service-based Metrics
@@ -100,6 +127,18 @@ scrape_configs:
 - `xray_url_latency_p50_ms` (gauge): Thời gian phản hồi p50 theo URL
 - `xray_url_latency_p90_ms` (gauge): Thời gian phản hồi p90 theo URL
 - `xray_url_latency_p99_ms` (gauge): Thời gian phản hồi p99 theo URL
+- `xray_url_status_total` (counter): Số lượng HTTP status code theo URL
+- `xray_url_method_total` (counter): Số lượng HTTP method theo URL
+
+### URL-Service Metrics
+
+- `xray_url_service_total` (counter): Số lượng requests theo URL và service
+- `xray_url_service_requests_total` (counter): Số lượng requests chi tiết theo URL và service
+- `xray_url_service_errors_total` (counter): Số lượng lỗi theo URL và service
+- `xray_url_service_latency_sum_ms` (gauge): Tổng thời gian phản hồi theo URL và service
+- `xray_url_service_latency_count` (gauge): Số lượng latency samples theo URL và service
+- `xray_url_service_status_total` (counter): Số lượng HTTP status code theo URL và service
+- `xray_url_service_method_total` (counter): Số lượng HTTP method theo URL và service
 
 ### Service Dependency Metrics
 
