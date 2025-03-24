@@ -1,9 +1,10 @@
 """
-AWS X-Ray Prometheus Exporter - Collector Module
-Chịu trách nhiệm chính về thu thập dữ liệu từ AWS X-Ray
+AWS X-Ray Prometheus Exporter - Collector Module (Optimized)
+Chịu trách nhiệm chính về thu thập dữ liệu từ AWS X-Ray và tạo metrics phù hợp cho Prometheus
 """
 import logging
 import threading
+import json
 from datetime import datetime, timedelta
 
 from storage import StateStorage
@@ -36,7 +37,8 @@ class XRayMetricsCollector:
         self.metrics_cache = []
         self.last_update = datetime.min
         self.cache_lock = threading.Lock()
-        self.cache_ttl_seconds = 60  # Refresh metrics every 1 minute
+        # Giảm cache TTL để cập nhật metrics thường xuyên hơn
+        self.cache_ttl_seconds = 30  # Refresh metrics every 30 seconds
         
         # Đọc timestamp của lần chạy trước
         self.last_timestamp = self.storage.load_last_timestamp(self.time_window_minutes)
@@ -46,6 +48,9 @@ class XRayMetricsCollector:
         
         # Dictionary để lưu giá trị counter
         self.counter_values = self.storage.load_counter_values()
+        
+        # Lưu thời gian các metrics được tạo
+        self.metrics_timestamps = {}
         
         logger.info(f"Initialized collector with time window: {time_window_minutes} minute(s)")
         logger.info(f"Last timestamp: {self.last_timestamp}")
@@ -73,7 +78,7 @@ class XRayMetricsCollector:
     
     def collect_metrics(self):
         """
-        Thu thập metrics từ X-Ray
+        Thu thập metrics từ X-Ray với cải tiến để tạo dữ liệu mượt hơn cho Prometheus
         """
         logger.info("Starting X-Ray metrics collection")
         
@@ -102,10 +107,70 @@ class XRayMetricsCollector:
         
         logger.info(f"Collected {len(traces)} traces")
         
-        # Xử lý trace data thành metrics
-        metrics = self.processor.process_trace_data(
-            traces, start_time, end_time, self.counter_values
-        )
+        # Tạo các time buckets để phân phối traces
+        time_range_seconds = (end_time - start_time).total_seconds()
+        num_buckets = min(10, max(1, int(time_range_seconds / 60)))  # Mỗi bucket ~ 1 phút
+        
+        logger.info(f"Creating {num_buckets} time buckets for smoother metrics")
+        
+        # Tạo bucket thời gian
+        buckets = []
+        for i in range(num_buckets):
+            bucket_start = start_time + timedelta(seconds=i * time_range_seconds / num_buckets)
+            bucket_end = start_time + timedelta(seconds=(i + 1) * time_range_seconds / num_buckets)
+            buckets.append((bucket_start, bucket_end))
+        
+        # Phân phối traces vào các buckets
+        trace_buckets = [[] for _ in range(num_buckets)]
+        
+        for trace in traces:
+            # Trích xuất thời gian từ trace nếu có
+            trace_time = None
+            for segment in trace.get('Segments', []):
+                try:
+                    document = segment.get('Document')
+                    if document:
+                        doc_data = json.loads(document)
+                        trace_time = datetime.fromtimestamp(doc_data.get('start_time', 0))
+                        break
+                except:
+                    pass
+            
+            # Nếu không lấy được thời gian, phân phối đều
+            if not trace_time:
+                bucket_idx = len(trace_buckets) // 2  # Mặc định ở giữa
+            else:
+                # Tìm bucket phù hợp dựa trên thời gian
+                bucket_idx = 0
+                for i, (bucket_start, bucket_end) in enumerate(buckets):
+                    if bucket_start <= trace_time <= bucket_end:
+                        bucket_idx = i
+                        break
+            
+            trace_buckets[bucket_idx].append(trace)
+        
+        # Xử lý từng bucket và tạo metrics
+        all_metrics = []
+        for i, (bucket_start, bucket_end) in enumerate(buckets):
+            bucket_traces = trace_buckets[i]
+            if not bucket_traces:
+                continue
+                
+            logger.info(f"Processing bucket {i+1}/{num_buckets} with {len(bucket_traces)} traces")
+            
+            # Tạo metrics cho bucket này
+            bucket_metrics = self.processor.process_trace_data(
+                bucket_traces, bucket_start, bucket_end, self.counter_values
+            )
+            
+            # Thêm timestamp cho mỗi metric
+            bucket_timestamp = int(bucket_end.timestamp() * 1000)
+            for metric in bucket_metrics:
+                metric_key = f"{metric['name']}_{'-'.join([f'{k}:{v}' for k, v in metric['labels'].items()])}"
+                self.metrics_timestamps[metric_key] = bucket_timestamp
+                metric['timestamp'] = bucket_timestamp
+            
+            all_metrics.extend(bucket_metrics)
         
         # Cập nhật timestamp
         self.storage.save_last_timestamp(end_time)
@@ -117,11 +182,11 @@ class XRayMetricsCollector:
         # Lưu giá trị counters
         self.storage.save_counter_values(self.counter_values)
         
-        logger.info(f"Generated {len(metrics)} metrics")
-        return metrics
+        logger.info(f"Generated {len(all_metrics)} metrics across {num_buckets} time buckets")
+        return all_metrics
     
     def format_metrics_for_prometheus(self, metrics):
         """
-        Chuyển đổi metrics thành định dạng Prometheus
+        Chuyển đổi metrics thành định dạng Prometheus với timestamps
         """
-        return self.formatter.format_metrics_for_prometheus(metrics)
+        return self.formatter.format_metrics_for_prometheus(metrics, self.metrics_timestamps)
