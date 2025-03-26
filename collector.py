@@ -81,6 +81,17 @@ class XRayMetricsCollector:
         end_time = datetime.utcnow()
         start_time = self.last_timestamp
 
+        # Thêm logic xử lý overlapping ở đây
+        # Thêm một khoảng thời gian chồng lấn nhỏ để tránh bỏ sót traces
+        overlap_seconds = 5
+        if start_time > end_time - timedelta(seconds=overlap_seconds):
+            # Nếu khoảng thời gian quá nhỏ, không cần thêm overlap
+            pass
+        else:
+            # Lùi thời điểm bắt đầu thêm một chút để đảm bảo bắt được các trace có độ trễ
+            start_time = start_time - timedelta(seconds=overlap_seconds)
+            logger.debug(f"Added {overlap_seconds}s overlap. New start_time: {start_time}")
+
         # Đảm bảo khoảng thời gian không quá lớn để tránh quá tải
         max_time_window = self.time_window_minutes * 60 * 5  # 5 lần time_window
         if (end_time - start_time).total_seconds() > max_time_window:
