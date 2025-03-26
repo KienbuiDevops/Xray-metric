@@ -98,7 +98,7 @@
           "refId": "A"
         }
       ],
-      "title": "Tổng Số Requests",
+      "title": "Tổng Số Trace",
       "type": "stat"
     },
     {
@@ -503,13 +503,15 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(xray_service_requests_total[5m])) by (service)",
+          "editorMode": "code",
+          "expr": "sum(rate(xray_service_requests_total[1m])) by (service) * 60",
           "interval": "",
-          "legendFormat": "{{service}}",
+          "legendFormat": "__auto",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Lưu lượng Request theo Service (rps)",
+      "title": "Lưu lượng Trace theo Service (rpm)",
       "type": "timeseries"
     },
     {
@@ -794,9 +796,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(5, sum(rate(xray_service_requests_total[5m])) by (service))",
+          "editorMode": "code",
+          "expr": "topk(5, sum(rate(xray_service_requests_total[1m])) by (service) * 60)",
           "interval": "",
           "legendFormat": "{{service}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1131,32 +1135,7 @@
           },
           "unit": "percent"
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "voucher-split-merge-api"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -1434,7 +1413,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 350
+                "value": 936
               }
             ]
           },
@@ -1505,7 +1484,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "requests"
+            "displayName": "error_rate"
           }
         ]
       },
@@ -1516,7 +1495,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(15, sum by (url) (rate(xray_url_requests_total[5m])))",
+          "editorMode": "code",
+          "expr": "topk(15, sum by (url) (rate(xray_url_requests_total[$__range])))",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -1528,7 +1508,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (url) (rate(xray_url_errors_total[5m])) / sum by (url) (rate(xray_url_requests_total[5m])) * 100",
+          "editorMode": "code",
+          "expr": "sum by (url) (rate(xray_url_errors_total[$__range])) / sum by (url) (rate(xray_url_requests_total[$__range])) * 100",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -1540,7 +1521,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (url) (rate(xray_url_latency_sum_ms[5m])) / sum by (url) (rate(xray_url_latency_count[5m]))",
+          "editorMode": "code",
+          "expr": "sum by (url) (rate(xray_url_latency_sum_ms[$__range])) / sum by (url) (rate(xray_url_latency_count[$__range]))",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -1576,19 +1558,6 @@
       "type": "table"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 62
-      },
-      "id": 42,
-      "panels": [],
-      "title": "Service Dependencies",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1606,63 +1575,91 @@
             "filterable": true,
             "inspect": false
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "color": "transparent",
+                  "index": 0,
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 5
               }
             ]
-          }
+          },
+          "unit": "percent"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "source"
+              "options": "URL"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 200
+                "value": 740
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "target"
+              "options": "Error Rate (%)"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 200
+                "value": 120
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "calls"
+              "options": "Request Count"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 262
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
+        "h": 8,
+        "w": 24,
         "x": 0,
-        "y": 63
+        "y": 62
       },
-      "id": 44,
+      "id": 60,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -1676,8 +1673,8 @@
         "showHeader": true,
         "sortBy": [
           {
-            "desc": true,
-            "displayName": "calls"
+            "desc": false,
+            "displayName": "Request Count"
           }
         ]
       },
@@ -1688,16 +1685,38 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(20, sum by (source, target) (rate(xray_service_dependency_total[5m])))",
+          "editorMode": "code",
+          "expr": "sum(increase(xray_url_requests_total[$__range])) by (url) > 0",
           "format": "table",
           "instant": true,
-          "interval": "",
-          "legendFormat": "",
+          "legendFormat": "__auto",
+          "range": false,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(increase(xray_url_errors_total[$__range])) by (url) / sum(increase(xray_url_requests_total[$__range])) by (url) > 0",
+          "format": "table",
+          "hide": false,
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "B"
         }
       ],
-      "title": "Top Service Dependencies",
+      "title": "URL Statistics",
       "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "url",
+            "mode": "outer"
+          }
+        },
         {
           "id": "organize",
           "options": {
@@ -1706,7 +1725,9 @@
             },
             "indexByName": {},
             "renameByName": {
-              "Value": "calls"
+              "Value #A": "Request Count",
+              "Value #B": "Error Rate (%)",
+              "url": "URL"
             }
           }
         }
@@ -1714,105 +1735,12 @@
       "type": "table"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 63
-      },
-      "id": 46,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.5.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "topk(5, sum by (source, target) (rate(xray_service_dependency_total[5m])))",
-          "interval": "",
-          "legendFormat": "{{source}} -> {{target}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Top 5 Service Dependencies Over Time",
-      "type": "timeseries"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 70
       },
       "id": 50,
       "panels": [],
@@ -1844,7 +1772,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 71
       },
       "id": 52,
       "options": {
@@ -1917,7 +1845,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 71
       },
       "id": 54,
       "options": {
@@ -2025,7 +1953,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 79
       },
       "id": 56,
       "options": {
@@ -2116,13 +2044,13 @@
     ]
   },
   "time": {
-    "from": "2025-03-26T03:35:00.000Z",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "AWS X-Ray Service Monitoring Dashboard",
   "uid": "xray-services",
-  "version": 27,
+  "version": 35,
   "weekStart": ""
 }
