@@ -36,7 +36,7 @@ class XRayMetricsCollector:
         self.metrics_cache = []
         self.last_update = datetime.min
         self.cache_lock = threading.Lock()
-        self.cache_ttl_seconds = 60  # Refresh metrics every 1 minute
+        self.cache_ttl_seconds = 30  # Refresh metrics every 1 minute
 
         # Đọc timestamp của lần chạy trước
         self.last_timestamp = self.storage.load_last_timestamp(self.time_window_minutes)
