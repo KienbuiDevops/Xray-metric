@@ -23,257 +23,6 @@ class TraceProcessor:
         # Khởi tạo AWS session
         session = boto3.Session(profile_name=profile, region_name=region)
         self.xray_client = session.client('xray')
-
-    def generate_all_metrics(self, counter_values):
-        """
-        Tạo tất cả counter metrics và latency metrics từ counter_values hiện tại
-        Đảm bảo luôn báo cáo các metrics quan trọng kể cả khi không có dữ liệu mới
-        
-        :param counter_values: Dictionary của các counter values hiện tại
-        :return: List các metrics
-        """
-        logger.info("Generating metrics from existing counter values")
-        
-        metrics = []
-        
-        # Phân loại và xử lý counter metrics
-        for key, value in counter_values.items():
-            # Xử lý các counter metrics, bỏ qua các gauge metrics liên quan đến latency
-            if any(key.startswith(prefix) for prefix in [
-                'xray_service_requests_total_',
-                'xray_service_errors_total_',
-                'xray_service_faults_total_',
-                'xray_service_throttles_total_',
-                'xray_url_requests_total_',
-                'xray_url_errors_total_',
-                'xray_url_service_requests_total_',
-                'xray_url_service_errors_total_',
-                'xray_service_status_total_',
-                'xray_service_method_total_',
-                'xray_service_client_ip_total_',
-                'xray_url_service_total_',
-                'xray_url_method_total_',
-                'xray_url_status_total_',
-                'xray_service_dependency_total_'
-            ]):
-                # Extract metric name and labels from key
-                parts = key.split('_')
-                
-                # Service requests
-                if key.startswith('xray_service_requests_total_'):
-                    service = key[len('xray_service_requests_total_'):]
-                    metrics.append({
-                        'name': 'xray_service_requests_total',
-                        'labels': {'service': service},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # Service errors
-                elif key.startswith('xray_service_errors_total_'):
-                    service = key[len('xray_service_errors_total_'):]
-                    metrics.append({
-                        'name': 'xray_service_errors_total',
-                        'labels': {'service': service},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # Service faults
-                elif key.startswith('xray_service_faults_total_'):
-                    service = key[len('xray_service_faults_total_'):]
-                    metrics.append({
-                        'name': 'xray_service_faults_total',
-                        'labels': {'service': service},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # Service throttles
-                elif key.startswith('xray_service_throttles_total_'):
-                    service = key[len('xray_service_throttles_total_'):]
-                    metrics.append({
-                        'name': 'xray_service_throttles_total',
-                        'labels': {'service': service},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # URL requests
-                elif key.startswith('xray_url_requests_total_'):
-                    url = key[len('xray_url_requests_total_'):]
-                    metrics.append({
-                        'name': 'xray_url_requests_total',
-                        'labels': {'url': url},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # URL errors
-                elif key.startswith('xray_url_errors_total_'):
-                    url = key[len('xray_url_errors_total_'):]
-                    metrics.append({
-                        'name': 'xray_url_errors_total',
-                        'labels': {'url': url},
-                        'value': value,
-                        'type': 'counter'
-                    })
-                # URL-Service requests
-                elif key.startswith('xray_url_service_requests_total_'):
-                    remaining = key[len('xray_url_service_requests_total_'):]
-                    last_underscore = remaining.rfind('_')
-                    if last_underscore != -1:
-                        url = remaining[:last_underscore]
-                        service = remaining[last_underscore+1:]
-                        metrics.append({
-                            'name': 'xray_url_service_requests_total',
-                            'labels': {'url': url, 'service': service},
-                            'value': value,
-                            'type': 'counter'
-                        })
-                # URL-Service errors
-                elif key.startswith('xray_url_service_errors_total_'):
-                    remaining = key[len('xray_url_service_errors_total_'):]
-                    last_underscore = remaining.rfind('_')
-                    if last_underscore != -1:
-                        url = remaining[:last_underscore]
-                        service = remaining[last_underscore+1:]
-                        metrics.append({
-                            'name': 'xray_url_service_errors_total',
-                            'labels': {'url': url, 'service': service},
-                            'value': value,
-                            'type': 'counter'
-                        })
-                # Service status codes
-                elif key.startswith('xray_service_status_total_'):
-                    remaining = key[len('xray_service_status_total_'):]
-                    last_underscore = remaining.rfind('_')
-                    if last_underscore != -1:
-                        service = remaining[:last_underscore]
-                        status_code = remaining[last_underscore+1:]
-                        metrics.append({
-                            'name': 'xray_service_status_total',
-                            'labels': {'service': service, 'status_code': status_code},
-                            'value': value,
-                            'type': 'counter'
-                        })
-                # Service HTTP methods
-                elif key.startswith('xray_service_method_total_'):
-                    remaining = key[len('xray_service_method_total_'):]
-                    last_underscore = remaining.rfind('_')
-                    if last_underscore != -1:
-                        service = remaining[:last_underscore]
-                        method = remaining[last_underscore+1:]
-                        metrics.append({
-                            'name': 'xray_service_method_total',
-                            'labels': {'service': service, 'method': method},
-                            'value': value,
-                            'type': 'counter'
-                        })
-                # Service dependencies
-                elif key.startswith('xray_service_dependency_total_'):
-                    remaining = key[len('xray_service_dependency_total_'):]
-                    last_underscore = remaining.rfind('_')
-                    if last_underscore != -1:
-                        source = remaining[:last_underscore]
-                        target = remaining[last_underscore+1:]
-                        metrics.append({
-                            'name': 'xray_service_dependency_total',
-                            'labels': {'source': source, 'target': target},
-                            'value': value,
-                            'type': 'counter'
-                        })
-            
-            # Xử lý các latency metrics
-            elif key.startswith('xray_service_latency_sum_ms_'):
-                service = key[len('xray_service_latency_sum_ms_'):]
-                latency_sum = value
-                
-                # Tìm latency count tương ứng
-                latency_count_key = f'xray_service_latency_count_{service}'
-                latency_count = counter_values.get(latency_count_key, 0)
-                
-                # Thêm metrics dù có dữ liệu mới hay không
-                metrics.append({
-                    'name': 'xray_service_latency_sum_ms',
-                    'labels': {'service': service},
-                    'value': latency_sum,
-                    'type': 'gauge'
-                })
-                
-                metrics.append({
-                    'name': 'xray_service_latency_count',
-                    'labels': {'service': service},
-                    'value': latency_count,
-                    'type': 'gauge'
-                })
-            
-            # Xử lý các url latency metrics
-            elif key.startswith('xray_url_latency_sum_ms_'):
-                url = key[len('xray_url_latency_sum_ms_'):]
-                latency_sum = value
-                
-                # Tìm url latency count tương ứng
-                latency_count_key = f'xray_url_latency_count_{url}'
-                latency_count = counter_values.get(latency_count_key, 0)
-                
-                # Thêm url latency metrics
-                metrics.append({
-                    'name': 'xray_url_latency_sum_ms',
-                    'labels': {'url': url},
-                    'value': latency_sum,
-                    'type': 'gauge'
-                })
-                
-                metrics.append({
-                    'name': 'xray_url_latency_count',
-                    'labels': {'url': url},
-                    'value': latency_count,
-                    'type': 'gauge'
-                })
-            
-            # Xử lý url-service latency metrics
-            elif key.startswith('xray_url_service_latency_sum_ms_'):
-                remaining = key[len('xray_url_service_latency_sum_ms_'):]
-                last_underscore = remaining.rfind('_')
-                if last_underscore != -1:
-                    url = remaining[:last_underscore]
-                    service = remaining[last_underscore+1:]
-                    latency_sum = value
-                    
-                    # Tìm url-service latency count tương ứng
-                    latency_count_key = f'xray_url_service_latency_count_{url}_{service}'
-                    latency_count = counter_values.get(latency_count_key, 0)
-                    
-                    # Thêm url-service latency metrics
-                    metrics.append({
-                        'name': 'xray_url_service_latency_sum_ms',
-                        'labels': {'url': url, 'service': service},
-                        'value': latency_sum,
-                        'type': 'gauge'
-                    })
-                    
-                    metrics.append({
-                        'name': 'xray_url_service_latency_count',
-                        'labels': {'url': url, 'service': service},
-                        'value': latency_count,
-                        'type': 'gauge'
-                    })
-        
-        # Thêm heartbeat metric để kiểm tra kết nối
-        counter_values['xray_exporter_heartbeat'] = counter_values.get('xray_exporter_heartbeat', 0) + 1
-        metrics.append({
-            'name': 'xray_exporter_heartbeat',
-            'labels': {},
-            'value': counter_values['xray_exporter_heartbeat'],
-            'type': 'counter'
-        })
-        
-        # Thêm timestamp hiện tại
-        metrics.append({
-            'name': 'xray_exporter_last_update_timestamp',
-            'labels': {},
-            'value': int(datetime.now().timestamp()),
-            'type': 'gauge'
-        })
-        
-        logger.info(f"Generated {len(metrics)} metrics from existing counter values")
-        return metrics
     
     def get_traces(self, start_time, end_time, processed_trace_ids):
         """
@@ -518,10 +267,10 @@ class ServiceMetricsGenerator:
             service_throttle_key = f"xray_service_throttles_total_{service_name}"
             
             # Cập nhật counters
-            self.counter_values[service_request_key] = self.counter_values.get(service_request_key, 0) + data['request_count']
-            self.counter_values[service_error_key] = self.counter_values.get(service_error_key, 0) + data['error_count']
-            self.counter_values[service_fault_key] = self.counter_values.get(service_fault_key, 0) + data['fault_count']
-            self.counter_values[service_throttle_key] = self.counter_values.get(service_throttle_key, 0) + data['throttle_count']
+            self.counter_values[service_request_key] += data['request_count']
+            self.counter_values[service_error_key] += data['error_count']
+            self.counter_values[service_fault_key] += data['fault_count']
+            self.counter_values[service_throttle_key] += data['throttle_count']
             
             # Thêm counter metrics (nguyên liệu thô cho Prometheus)
             metrics.append({
@@ -552,22 +301,50 @@ class ServiceMetricsGenerator:
                 'type': 'counter'
             })
             
-            # Xử lý HTTP status codes
-            for status_code, count in data['status_codes'].items():
-                status_key = f"xray_service_status_total_{service_name}_{status_code}"
-                self.counter_values[status_key] = self.counter_values.get(status_key, 0) + count
+            # Latency observations - raw data for Prometheus/Grafana calculations
+            if data['latencies']:
+                # Cung cấp raw latency data
+                for latency in data['latencies']:
+                    metrics.append({
+                        'name': 'xray_service_latency_ms',
+                        'labels': {'service': service_name},
+                        'value': latency,
+                        'type': 'gauge'
+                    })
+                
+                # Cũng cung cấp giá trị trung bình để thuận tiện
+                metrics.append({
+                    'name': 'xray_service_latency_sum_ms',
+                    'labels': {'service': service_name},
+                    'value': sum(data['latencies']),
+                    'type': 'gauge'
+                })
+                
+                metrics.append({
+                    'name': 'xray_service_latency_count',
+                    'labels': {'service': service_name},
+                    'value': len(data['latencies']),
+                    'type': 'gauge'
+                })
+            
+            # Status code distribution
+            for status, count in data['status_codes'].items():
+                # Counter key
+                status_key = f"xray_service_status_total_{service_name}_{status}"
+                self.counter_values[status_key] += count
                 
                 metrics.append({
                     'name': 'xray_service_status_total',
-                    'labels': {'service': service_name, 'status_code': status_code},
+                    'labels': {'service': service_name, 'status_code': status},
                     'value': self.counter_values[status_key],
                     'type': 'counter'
                 })
             
-            # Xử lý HTTP methods
+            # HTTP method distribution
             for method, count in data['methods'].items():
+                # Counter key
                 method_key = f"xray_service_method_total_{service_name}_{method}"
-                self.counter_values[method_key] = self.counter_values.get(method_key, 0) + count
+                self.counter_values[method_key] += count
                 
                 metrics.append({
                     'name': 'xray_service_method_total',
@@ -590,44 +367,28 @@ class ServiceMetricsGenerator:
                     'type': 'counter'
                 })
             
-            # Latency observations - raw data for Prometheus/Grafana calculations
-            if data['latencies']:
-                # Tính toán tổng và số lượng
-                latency_sum = sum(data['latencies'])
-                latency_count = len(data['latencies'])
-                
-                # Lưu trữ giá trị tổng và số lượng vào counter_values
-                latency_sum_key = f'xray_service_latency_sum_ms_{service_name}'
-                latency_count_key = f'xray_service_latency_count_{service_name}'
-                
-                self.counter_values[latency_sum_key] = self.counter_values.get(latency_sum_key, 0) + latency_sum
-                self.counter_values[latency_count_key] = self.counter_values.get(latency_count_key, 0) + latency_count
-                
-                # Cung cấp raw latency data
-                for latency in data['latencies']:
+            # Payload size metrics - raw data
+            if data['request_sizes']:
+                for size in data['request_sizes']:
                     metrics.append({
-                        'name': 'xray_service_latency_ms',
+                        'name': 'xray_service_request_size_bytes',
                         'labels': {'service': service_name},
-                        'value': latency,
+                        'value': size,
                         'type': 'gauge'
                     })
-                
-                # Cũng cung cấp giá trị tổng và số lượng để thuận tiện
-                metrics.append({
-                    'name': 'xray_service_latency_sum_ms',
-                    'labels': {'service': service_name},
-                    'value': self.counter_values[latency_sum_key],
-                    'type': 'gauge'
-                })
-                
-                metrics.append({
-                    'name': 'xray_service_latency_count',
-                    'labels': {'service': service_name},
-                    'value': self.counter_values[latency_count_key],
-                    'type': 'gauge'
-                })
             
+            if data['response_sizes']:
+                for size in data['response_sizes']:
+                    metrics.append({
+                        'name': 'xray_service_response_size_bytes',
+                        'labels': {'service': service_name},
+                        'value': size,
+                        'type': 'gauge'
+                    })
+        
         return metrics
+
+
 class UrlMetricsGenerator:
     """
     Tạo metrics liên quan đến URLs
@@ -678,19 +439,18 @@ class UrlMetricsGenerator:
                 })
             
             # Latency raw data for Prometheus calculations
-# Trong lớp UrlMetricsGenerator, cập nhật phần xử lý latency:
-
-            # Latency raw data for Prometheus calculations
             if data['latencies']:
-                latency_sum = sum(data['latencies'])
-                latency_count = len(data['latencies'])
+                # Điều chỉnh URL metrics thu thập để phân tách theo service
+                # Lưu trữ latency theo service và URL
+                latencies_by_service = defaultdict(list)
                 
-                # Lưu trữ giá trị tổng và số lượng vào counter_values
-                url_latency_sum_key = f'xray_url_latency_sum_ms_{url}'
-                url_latency_count_key = f'xray_url_latency_count_{url}'
-                
-                self.counter_values[url_latency_sum_key] = self.counter_values.get(url_latency_sum_key, 0) + latency_sum
-                self.counter_values[url_latency_count_key] = self.counter_values.get(url_latency_count_key, 0) + latency_count
+                # Thu thập latency theo service
+                for service in data['services'].keys():
+                    # Lấy mẫu latency từ service nếu có
+                    # Trong thực tế, đây là ước lượng vì chúng ta không có thông tin chi tiết về từng request
+                    # Tốt nhất là thu thập trực tiếp từ X-Ray trong hàm process_trace_data
+                    for latency in data['latencies']:
+                        latencies_by_service[service].append(latency)
                 
                 # Global URL latency
                 for latency in data['latencies']:
@@ -705,47 +465,34 @@ class UrlMetricsGenerator:
                 metrics.append({
                     'name': 'xray_url_latency_sum_ms',
                     'labels': {'url': url},
-                    'value': self.counter_values[url_latency_sum_key],
+                    'value': sum(data['latencies']),
                     'type': 'gauge'
                 })
                 
                 metrics.append({
                     'name': 'xray_url_latency_count',
                     'labels': {'url': url},
-                    'value': self.counter_values[url_latency_count_key],
+                    'value': len(data['latencies']),
                     'type': 'gauge'
                 })
                 
                 # Thêm latency theo service và URL
-                for service, service_count in data['services'].items():
-                    if service_count > 0:
-                        # Ước tính latency cho mỗi service dựa trên tỷ lệ requests
-                        service_ratio = service_count / data['request_count']
-                        estimated_latency_sum = latency_sum * service_ratio
-                        estimated_latency_count = int(latency_count * service_ratio)
+                for service, service_latencies in latencies_by_service.items():
+                    if service_latencies:
+                        # Thêm latency sum và count cho Prometheus
+                        metrics.append({
+                            'name': 'xray_url_service_latency_sum_ms',
+                            'labels': {'url': url, 'service': service},
+                            'value': sum(service_latencies),
+                            'type': 'gauge'
+                        })
                         
-                        if estimated_latency_count > 0:
-                            # Lưu trữ giá trị vào counter_values
-                            url_service_latency_sum_key = f'xray_url_service_latency_sum_ms_{url}_{service}'
-                            url_service_latency_count_key = f'xray_url_service_latency_count_{url}_{service}'
-                            
-                            self.counter_values[url_service_latency_sum_key] = self.counter_values.get(url_service_latency_sum_key, 0) + estimated_latency_sum
-                            self.counter_values[url_service_latency_count_key] = self.counter_values.get(url_service_latency_count_key, 0) + estimated_latency_count
-                            
-                            # Thêm latency sum và count cho Prometheus
-                            metrics.append({
-                                'name': 'xray_url_service_latency_sum_ms',
-                                'labels': {'url': url, 'service': service},
-                                'value': self.counter_values[url_service_latency_sum_key],
-                                'type': 'gauge'
-                            })
-                            
-                            metrics.append({
-                                'name': 'xray_url_service_latency_count',
-                                'labels': {'url': url, 'service': service},
-                                'value': self.counter_values[url_service_latency_count_key],
-                                'type': 'gauge'
-                            })
+                        metrics.append({
+                            'name': 'xray_url_service_latency_count',
+                            'labels': {'url': url, 'service': service},
+                            'value': len(service_latencies),
+                            'type': 'gauge'
+                        })
             
             # Service distribution
             for service, count in data['services'].items():
@@ -837,7 +584,6 @@ class UrlMetricsGenerator:
                             'value': self.counter_values[service_status_key],
                             'type': 'counter'
                         })
-                        
             
             # HTTP method distribution
             for method, count in data['methods'].items():
@@ -851,7 +597,6 @@ class UrlMetricsGenerator:
                     'value': self.counter_values[method_key],
                     'type': 'counter'
                 })
-
         
         return metrics
 
