@@ -552,13 +552,51 @@ class ServiceMetricsGenerator:
                 'type': 'counter'
             })
             
+            # Xử lý HTTP status codes
+            for status_code, count in data['status_codes'].items():
+                status_key = f"xray_service_status_total_{service_name}_{status_code}"
+                self.counter_values[status_key] = self.counter_values.get(status_key, 0) + count
+                
+                metrics.append({
+                    'name': 'xray_service_status_total',
+                    'labels': {'service': service_name, 'status_code': status_code},
+                    'value': self.counter_values[status_key],
+                    'type': 'counter'
+                })
+            
+            # Xử lý HTTP methods
+            for method, count in data['methods'].items():
+                method_key = f"xray_service_method_total_{service_name}_{method}"
+                self.counter_values[method_key] = self.counter_values.get(method_key, 0) + count
+                
+                metrics.append({
+                    'name': 'xray_service_method_total',
+                    'labels': {'service': service_name, 'method': method},
+                    'value': self.counter_values[method_key],
+                    'type': 'counter'
+                })
+            
+            # Client IP distribution (top 10)
+            top_ips = sorted(data['client_ips'].items(), key=lambda x: x[1], reverse=True)[:10]
+            for client_ip, count in top_ips:
+                # Counter key
+                ip_key = f"xray_service_client_ip_total_{service_name}_{client_ip}"
+                self.counter_values[ip_key] += count
+                
+                metrics.append({
+                    'name': 'xray_service_client_ip_total',
+                    'labels': {'service': service_name, 'client_ip': client_ip},
+                    'value': self.counter_values[ip_key],
+                    'type': 'counter'
+                })
+            
             # Latency observations - raw data for Prometheus/Grafana calculations
             if data['latencies']:
                 # Tính toán tổng và số lượng
                 latency_sum = sum(data['latencies'])
                 latency_count = len(data['latencies'])
                 
-                # Lưu trữ giá trị tống và số lượng vào counter_values
+                # Lưu trữ giá trị tổng và số lượng vào counter_values
                 latency_sum_key = f'xray_service_latency_sum_ms_{service_name}'
                 latency_count_key = f'xray_service_latency_count_{service_name}'
                 
@@ -588,8 +626,8 @@ class ServiceMetricsGenerator:
                     'value': self.counter_values[latency_count_key],
                     'type': 'gauge'
                 })
-
-
+            
+        return metrics
 class UrlMetricsGenerator:
     """
     Tạo metrics liên quan đến URLs
@@ -799,19 +837,7 @@ class UrlMetricsGenerator:
                             'value': self.counter_values[service_status_key],
                             'type': 'counter'
                         })
-            # Process client IP metrics
-            for client_ip, count in data['client_ips'].items():
-                # Create counter key
-                client_ip_key = f"xray_service_client_ip_total_{service_name}_{client_ip}"
-                self.counter_values[client_ip_key] = self.counter_values.get(client_ip_key, 0) + count
-                
-                # Add client IP metric
-                metrics.append({
-                    'name': 'xray_service_client_ip_total',
-                    'labels': {'service': service_name, 'client_ip': client_ip},
-                    'value': self.counter_values[client_ip_key],
-                    'type': 'counter'
-                })
+                        
             
             # HTTP method distribution
             for method, count in data['methods'].items():
@@ -825,6 +851,7 @@ class UrlMetricsGenerator:
                     'value': self.counter_values[method_key],
                     'type': 'counter'
                 })
+
         
         return metrics
 
