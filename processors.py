@@ -799,6 +799,19 @@ class UrlMetricsGenerator:
                             'value': self.counter_values[service_status_key],
                             'type': 'counter'
                         })
+            # Process client IP metrics
+            for client_ip, count in data['client_ips'].items():
+                # Create counter key
+                client_ip_key = f"xray_service_client_ip_total_{service_name}_{client_ip}"
+                self.counter_values[client_ip_key] = self.counter_values.get(client_ip_key, 0) + count
+                
+                # Add client IP metric
+                metrics.append({
+                    'name': 'xray_service_client_ip_total',
+                    'labels': {'service': service_name, 'client_ip': client_ip},
+                    'value': self.counter_values[client_ip_key],
+                    'type': 'counter'
+                })
             
             # HTTP method distribution
             for method, count in data['methods'].items():
