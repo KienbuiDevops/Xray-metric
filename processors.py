@@ -23,6 +23,196 @@ class TraceProcessor:
         # Khởi tạo AWS session
         session = boto3.Session(profile_name=profile, region_name=region)
         self.xray_client = session.client('xray')
+    def generate_all_metrics(self, counter_values):
+        """
+        Tạo tất cả metrics từ counter_values hiện tại
+        Đảm bảo tất cả metrics được đẩy lên Prometheus trong mọi tình huống
+        
+        :param counter_values: Dictionary của các counter values hiện tại
+        :return: List các metrics
+        """
+        logger.info("Generating all metrics from counter values")
+        
+        metrics = []
+        service_counters = {}
+        url_counters = {}
+        url_service_counters = {}
+        status_counters = {}
+        method_counters = {}
+        dependency_counters = {}
+        
+        # Duyệt qua tất cả counter_values để phân loại theo nhóm
+        for key, value in counter_values.items():
+            # Các metrics liên quan đến service
+            if key.startswith('xray_service_requests_total_'):
+                service_name = key[len('xray_service_requests_total_'):]
+                if service_name not in service_counters:
+                    service_counters[service_name] = {'requests': 0, 'errors': 0, 'faults': 0, 'throttles': 0}
+                service_counters[service_name]['requests'] = value
+            elif key.startswith('xray_service_errors_total_'):
+                service_name = key[len('xray_service_errors_total_'):]
+                if service_name not in service_counters:
+                    service_counters[service_name] = {'requests': 0, 'errors': 0, 'faults': 0, 'throttles': 0}
+                service_counters[service_name]['errors'] = value
+            elif key.startswith('xray_service_faults_total_'):
+                service_name = key[len('xray_service_faults_total_'):]
+                if service_name not in service_counters:
+                    service_counters[service_name] = {'requests': 0, 'errors': 0, 'faults': 0, 'throttles': 0}
+                service_counters[service_name]['faults'] = value
+            elif key.startswith('xray_service_throttles_total_'):
+                service_name = key[len('xray_service_throttles_total_'):]
+                if service_name not in service_counters:
+                    service_counters[service_name] = {'requests': 0, 'errors': 0, 'faults': 0, 'throttles': 0}
+                service_counters[service_name]['throttles'] = value
+            
+            # Các metrics liên quan đến URL
+            elif key.startswith('xray_url_requests_total_'):
+                url = key[len('xray_url_requests_total_'):]
+                if url not in url_counters:
+                    url_counters[url] = {'requests': 0, 'errors': 0}
+                url_counters[url]['requests'] = value
+            elif key.startswith('xray_url_errors_total_'):
+                url = key[len('xray_url_errors_total_'):]
+                if url not in url_counters:
+                    url_counters[url] = {'requests': 0, 'errors': 0}
+                url_counters[url]['errors'] = value
+            
+            # Các metrics liên quan đến URL-Service
+            elif key.startswith('xray_url_service_requests_total_'):
+                remaining = key[len('xray_url_service_requests_total_'):]
+                last_underscore = remaining.rfind('_')
+                if last_underscore != -1:
+                    url = remaining[:last_underscore]
+                    service = remaining[last_underscore+1:]
+                    url_service_pair = (url, service)
+                    if url_service_pair not in url_service_counters:
+                        url_service_counters[url_service_pair] = {'requests': 0, 'errors': 0}
+                    url_service_counters[url_service_pair]['requests'] = value
+            elif key.startswith('xray_url_service_errors_total_'):
+                remaining = key[len('xray_url_service_errors_total_'):]
+                last_underscore = remaining.rfind('_')
+                if last_underscore != -1:
+                    url = remaining[:last_underscore]
+                    service = remaining[last_underscore+1:]
+                    url_service_pair = (url, service)
+                    if url_service_pair not in url_service_counters:
+                        url_service_counters[url_service_pair] = {'requests': 0, 'errors': 0}
+                    url_service_counters[url_service_pair]['errors'] = value
+            
+            # Status codes
+            elif key.startswith('xray_service_status_total_'):
+                remaining = key[len('xray_service_status_total_'):]
+                last_underscore = remaining.rfind('_')
+                if last_underscore != -1:
+                    service = remaining[:last_underscore]
+                    status_code = remaining[last_underscore+1:]
+                    status_counters[(service, status_code)] = value
+            
+            # HTTP methods
+            elif key.startswith('xray_service_method_total_'):
+                remaining = key[len('xray_service_method_total_'):]
+                last_underscore = remaining.rfind('_')
+                if last_underscore != -1:
+                    service = remaining[:last_underscore]
+                    method = remaining[last_underscore+1:]
+                    method_counters[(service, method)] = value
+            
+            # Service dependencies
+            elif key.startswith('xray_service_dependency_total_'):
+                remaining = key[len('xray_service_dependency_total_'):]
+                last_underscore = remaining.rfind('_')
+                if last_underscore != -1:
+                    source = remaining[:last_underscore]
+                    target = remaining[last_underscore+1:]
+                    dependency_counters[(source, target)] = value
+        
+        # Tạo metrics từ các counter đã phân loại
+        # Service metrics
+        for service_name, counters in service_counters.items():
+            metrics.append({
+                'name': 'xray_service_requests_total',
+                'labels': {'service': service_name},
+                'value': counters['requests'],
+                'type': 'counter'
+            })
+            metrics.append({
+                'name': 'xray_service_errors_total',
+                'labels': {'service': service_name},
+                'value': counters['errors'],
+                'type': 'counter'
+            })
+            metrics.append({
+                'name': 'xray_service_faults_total',
+                'labels': {'service': service_name},
+                'value': counters['faults'],
+                'type': 'counter'
+            })
+            metrics.append({
+                'name': 'xray_service_throttles_total',
+                'labels': {'service': service_name},
+                'value': counters['throttles'],
+                'type': 'counter'
+            })
+        
+        # URL metrics
+        for url, counters in url_counters.items():
+            metrics.append({
+                'name': 'xray_url_requests_total',
+                'labels': {'url': url},
+                'value': counters['requests'],
+                'type': 'counter'
+            })
+            metrics.append({
+                'name': 'xray_url_errors_total',
+                'labels': {'url': url},
+                'value': counters['errors'],
+                'type': 'counter'
+            })
+        
+        # URL-Service metrics
+        for (url, service), counters in url_service_counters.items():
+            metrics.append({
+                'name': 'xray_url_service_requests_total',
+                'labels': {'url': url, 'service': service},
+                'value': counters['requests'],
+                'type': 'counter'
+            })
+            metrics.append({
+                'name': 'xray_url_service_errors_total',
+                'labels': {'url': url, 'service': service},
+                'value': counters['errors'],
+                'type': 'counter'
+            })
+        
+        # Status code metrics
+        for (service, status_code), value in status_counters.items():
+            metrics.append({
+                'name': 'xray_service_status_total',
+                'labels': {'service': service, 'status_code': status_code},
+                'value': value,
+                'type': 'counter'
+            })
+        
+        # HTTP method metrics
+        for (service, method), value in method_counters.items():
+            metrics.append({
+                'name': 'xray_service_method_total',
+                'labels': {'service': service, 'method': method},
+                'value': value,
+                'type': 'counter'
+            })
+        
+        # Service dependency metrics
+        for (source, target), value in dependency_counters.items():
+            metrics.append({
+                'name': 'xray_service_dependency_total',
+                'labels': {'source': source, 'target': target},
+                'value': value,
+                'type': 'counter'
+            })
+        
+        logger.info(f"Generated {len(metrics)} metrics from existing counter values")
+        return metrics
     
     def get_traces(self, start_time, end_time, processed_trace_ids):
         """
