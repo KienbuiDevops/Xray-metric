@@ -471,6 +471,14 @@ class ServiceMetricsGenerator:
             
             # Latency observations - raw data for Prometheus/Grafana calculations
             if data['latencies']:
+                # Tính toán tổng và số lượng
+                latency_sum = sum(data['latencies'])
+                latency_count = len(data['latencies'])
+                
+                # Lưu trữ giá trị vào counter_values - THÊM DÒNG NÀY
+                self.counter_values[f'xray_service_latency_sum_ms_{service_name}'] = latency_sum
+                self.counter_values[f'xray_service_latency_count_{service_name}'] = latency_count
+                
                 # Cung cấp raw latency data
                 for latency in data['latencies']:
                     metrics.append({
@@ -480,18 +488,18 @@ class ServiceMetricsGenerator:
                         'type': 'gauge'
                     })
                 
-                # Cũng cung cấp giá trị trung bình để thuận tiện
+                # Cũng cung cấp giá trị tổng và số lượng để thuận tiện
                 metrics.append({
                     'name': 'xray_service_latency_sum_ms',
                     'labels': {'service': service_name},
-                    'value': sum(data['latencies']),
+                    'value': latency_sum,
                     'type': 'gauge'
                 })
                 
                 metrics.append({
                     'name': 'xray_service_latency_count',
                     'labels': {'service': service_name},
-                    'value': len(data['latencies']),
+                    'value': latency_count,
                     'type': 'gauge'
                 })
             
