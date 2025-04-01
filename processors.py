@@ -319,6 +319,28 @@ class ServiceMetricsGenerator:
                 'value': self.counter_values[service_throttle_key],
                 'type': 'counter'
             })
+            # Thêm gauge metrics mới cho errors, faults, và throttles
+            metrics.append({
+                'name': 'xray_service_errors_count',
+                'labels': {'service': service_name},
+                'value': data['error_count'],
+                'type': 'gauge'
+            })
+
+            metrics.append({
+                'name': 'xray_service_faults_count',
+                'labels': {'service': service_name},
+                'value': data['fault_count'],
+                'type': 'gauge'
+            })
+
+            metrics.append({
+                'name': 'xray_service_throttles_count',
+                'labels': {'service': service_name},
+                'value': data['throttle_count'],
+                'type': 'gauge'
+            })
+
 
             # Latency observations - raw data for Prometheus/Grafana calculations
             if data['latencies']:
@@ -726,6 +748,13 @@ class MetricsFormatter:
                 prometheus_data.append(f"# HELP {metric_name} Total count of HTTP status codes for URLs handled by specific services")
             elif metric_name == 'xray_url_service_method_total':
                 prometheus_data.append(f"# HELP {metric_name} Total count of HTTP methods for URLs handled by specific services")
+            # Add help descriptions for our new metrics
+            elif metric_name == 'xray_service_errors_count':
+                prometheus_data.append(f"# HELP {metric_name} Count of error observations by service (gauge)")
+            elif metric_name == 'xray_service_faults_count':
+                prometheus_data.append(f"# HELP {metric_name} Count of fault observations by service (gauge)")
+            elif metric_name == 'xray_service_throttles_count':
+                prometheus_data.append(f"# HELP {metric_name} Count of throttle observations by service (gauge)")
             elif metric_name.endswith('_total'):
                 prometheus_data.append(f"# HELP {metric_name} Total count of {metric_name[:-6]} from X-Ray traces")
             elif metric_name.endswith('_ms'):
