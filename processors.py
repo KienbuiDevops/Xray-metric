@@ -124,6 +124,8 @@ class TraceProcessor:
         return all_traces
 
     def process_trace_data(self, traces, start_time, end_time, counter_values, gauge_values=None):
+        # Khởi tạo các metric generators
+        service_metrics_generator = ServiceMetricsGenerator(counter_values, gauge_values)
         """
         Xử lý dữ liệu trace thành metrics tạm thời
 
@@ -274,8 +276,14 @@ class ServiceMetricsGenerator:
     """
     Tạo metrics liên quan đến services
     """
-    def __init__(self, counter_values):
+    def __init__(self, counter_values, gauge_values=None):
         self.counter_values = counter_values
+        self.gauge_values = gauge_values or {
+            'errors': {},
+            'faults': {},
+            'throttles': {}
+        }
+
 
     def generate(self, service_metrics):
         """
