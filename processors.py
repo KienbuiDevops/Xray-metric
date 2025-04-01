@@ -123,7 +123,7 @@ class TraceProcessor:
         
         return all_traces
 
-    def process_trace_data(self, traces, start_time, end_time, counter_values):
+    def process_trace_data(self, traces, start_time, end_time, counter_values, gauge_values=None):
         """
         Xử lý dữ liệu trace thành metrics tạm thời
 
@@ -131,10 +131,11 @@ class TraceProcessor:
         :param start_time: Thời gian bắt đầu
         :param end_time: Thời gian kết thúc
         :param counter_values: Dictionary lưu trữ giá trị các counters
+        :param gauge_values: Dictionary lưu trữ giá trị các gauges
         :return: List các metrics
         """
         # Khởi tạo các metric generators
-        service_metrics_generator = ServiceMetricsGenerator(counter_values)
+        service_metrics_generator = ServiceMetricsGenerator(counter_values, gauge_values)
         url_metrics_generator = UrlMetricsGenerator(counter_values)
         dependency_metrics_generator = DependencyMetricsGenerator(counter_values)
 

@@ -89,6 +89,34 @@ class XRayMetricsCollector:
         logger.info(f"Advanced options: max_traces={max_traces}, parallel_workers={parallel_workers}, batch_size={batch_size}")
         logger.info(f"Trace storage options: max_trace_ids={max_trace_ids}, retention_days={retention_days}")
 
+    def get_metrics(self):
+        """
+        Lấy metrics từ cache hoặc thu thập mới nếu cache đã hết hạn
+        """
+        with self.cache_lock:
+            current_time = datetime.now()
+            # Kiểm tra nếu cache đã hết hạn
+            if (current_time - self.last_update).total_seconds() > self.cache_ttl_seconds:
+                logger.info("Cache expired, collecting new metrics")
+                try:
+                    # Thêm một trường để lưu trữ thời gian thu thập metrics
+                    new_metrics = self.collect_metrics()
+                    
+                    # Thêm timestamp cho mỗi metric để Prometheus có thể xác định metrics cũ
+                    timestamp_ms = int(current_time.timestamp() * 1000)
+                    for metric in new_metrics:
+                        metric['timestamp_ms'] = timestamp_ms
+                    
+                    self.metrics_cache = new_metrics
+                    self.last_update = current_time
+                except Exception as e:
+                    logger.error(f"Error collecting metrics: {str(e)}")
+                    # Nếu lỗi, giữ lại metrics cũ nhưng không cập nhật last_update
+            else:
+                logger.debug("Using cached metrics")
+
+            return self.metrics_cache
+
     def collect_metrics(self):
         """
         Thu thập metrics từ X-Ray với xử lý trace trùng lặp tối ưu
