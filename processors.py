@@ -27,13 +27,14 @@ class TraceProcessor:
         self.parallel_workers = parallel_workers
         self.retry_attempts = retry_attempts
 
-    def get_traces(self, start_time, end_time, processed_trace_ids):
+    def get_traces(self, start_time, end_time, processed_trace_ids, storage=None):
         """
-        Lấy traces từ X-Ray trong khoảng thời gian chỉ định
+        Lấy traces từ X-Ray trong khoảng thời gian chỉ định với xử lý trùng lặp tốt hơn
         
         :param start_time: Thời gian bắt đầu thu thập
         :param end_time: Thời gian kết thúc thu thập
         :param processed_trace_ids: Set chứa các trace ID đã xử lý
+        :param storage: Đối tượng StateStorage để lưu trữ trace IDs (nếu có)
         :return: List các traces
         """
         logger.info(f"Retrieving trace summaries from {start_time} to {end_time}")
@@ -56,13 +57,17 @@ class TraceProcessor:
             
             logger.info(f"Retrieved total {len(trace_summaries)} trace summaries")
             
-            # Lọc ra các trace chưa được xử lý
+            # Lọc ra các trace chưa được xử lý và theo dõi các trace ID mới
             new_trace_ids = []
             for summary in trace_summaries:
                 trace_id = summary['Id']
                 if trace_id not in processed_trace_ids:
                     new_trace_ids.append(trace_id)
                     processed_trace_ids.add(trace_id)
+            
+            # Thêm các trace ID mới vào storage nếu được cung cấp
+            if storage and new_trace_ids:
+                storage.add_trace_ids(new_trace_ids)
             
             logger.info(f"Found {len(new_trace_ids)} new traces to process out of {len(trace_summaries)} total traces")
             

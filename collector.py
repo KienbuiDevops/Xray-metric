@@ -14,7 +14,7 @@ logger = logging.getLogger('xray-exporter.collector')
 class XRayMetricsCollector:
     def __init__(self, region=None, profile=None, time_window_minutes=1, data_dir=None, 
                 max_traces=None, parallel_workers=20, batch_size=5, retry_attempts=3,
-                force_full_collection=False):
+                force_full_collection=False, max_trace_ids=1000000, retention_days=30):
         """
         Khởi tạo X-Ray Metrics Collector với các tùy chọn nâng cao
         
@@ -27,6 +27,8 @@ class XRayMetricsCollector:
         :param batch_size: Batch size for API calls
         :param retry_attempts: Number of retry attempts for API calls
         :param force_full_collection: Ignore processed trace IDs for this run
+        :param max_trace_ids: Maximum number of trace IDs to store
+        :param retention_days: Number of days to retain trace IDs
         """
         self.time_window_minutes = time_window_minutes
         self.max_traces = max_traces
@@ -35,8 +37,12 @@ class XRayMetricsCollector:
         self.retry_attempts = retry_attempts
         self.force_full_collection = force_full_collection
 
-        # Khởi tạo storage để lưu/đọc trạng thái
-        self.storage = StateStorage(data_dir=data_dir)
+        # Khởi tạo storage để lưu/đọc trạng thái với tùy chọn mới
+        self.storage = StateStorage(
+            data_dir=data_dir,
+            max_trace_ids=max_trace_ids,
+            retention_days=retention_days
+        )
 
         # Khởi tạo processor xử lý dữ liệu trace với các tùy chọn mới
         self.processor = TraceProcessor(
@@ -69,35 +75,23 @@ class XRayMetricsCollector:
 
         # Dictionary để lưu giá trị counter
         self.counter_values = self.storage.load_counter_values()
+        
+        # Dictionary để lưu trữ gauge metrics
+        self.gauge_values = {
+            'errors': {},
+            'faults': {},
+            'throttles': {}
+        }
 
         logger.info(f"Initialized collector with time window: {time_window_minutes} minute(s)")
         logger.info(f"Last timestamp: {self.last_timestamp}")
         logger.info(f"Number of processed trace IDs: {len(self.processed_trace_ids)}")
         logger.info(f"Advanced options: max_traces={max_traces}, parallel_workers={parallel_workers}, batch_size={batch_size}")
-
-    def get_metrics(self):
-        """
-        Lấy metrics từ cache hoặc thu thập mới nếu cache đã hết hạn
-        """
-        with self.cache_lock:
-            current_time = datetime.now()
-            # Kiểm tra nếu cache đã hết hạn
-            if (current_time - self.last_update).total_seconds() > self.cache_ttl_seconds:
-                logger.info("Cache expired, collecting new metrics")
-                try:
-                    self.metrics_cache = self.collect_metrics()
-                    self.last_update = current_time
-                except Exception as e:
-                    logger.error(f"Error collecting metrics: {str(e)}")
-                    # Nếu lỗi, giữ lại metrics cũ nhưng không cập nhật last_update
-            else:
-                logger.debug("Using cached metrics")
-
-            return self.metrics_cache
+        logger.info(f"Trace storage options: max_trace_ids={max_trace_ids}, retention_days={retention_days}")
 
     def collect_metrics(self):
         """
-        Thu thập metrics từ X-Ray
+        Thu thập metrics từ X-Ray với xử lý trace trùng lặp tối ưu
         """
         logger.info("Starting X-Ray metrics collection")
 
@@ -114,15 +108,62 @@ class XRayMetricsCollector:
 
         logger.info(f"Collecting data from {start_time} to {end_time}")
 
-        # Thu thập traces từ X-Ray
-        traces = self.processor.get_traces(start_time, end_time, self.processed_trace_ids)
+        # Reset các gauge metrics trước mỗi lần thu thập mới
+        self.gauge_values = {
+            'errors': {},
+            'faults': {},
+            'throttles': {}
+        }
+
+        # Thu thập traces từ X-Ray, truyền thêm storage để lưu trace IDs
+        traces = self.processor.get_traces(
+            start_time, 
+            end_time, 
+            self.processed_trace_ids,
+            storage=self.storage  # Truyền storage để lưu trace IDs liên tục
+        )
 
         if not traces:
             logger.warning("No traces found in the specified time window")
             # Cập nhật timestamp để lần sau không lấy lại khoảng thời gian này
             self.storage.save_last_timestamp(end_time)
             self.last_timestamp = end_time
-            return []
+            
+            # Tạo metrics cho các services đã biết
+            # Điều này đảm bảo rằng gauge metrics vẫn được báo cáo với giá trị 0
+            known_services = set()
+            for key in self.counter_values.keys():
+                if key.startswith('xray_service_requests_total_'):
+                    service_name = key[len('xray_service_requests_total_'):]
+                    known_services.add(service_name)
+            
+            # Tạo empty metrics list
+            metrics = []
+            
+            # Thêm gauge metrics với giá trị 0 cho tất cả services đã biết
+            for service_name in known_services:
+                metrics.append({
+                    'name': 'xray_service_errors_count',
+                    'labels': {'service': service_name},
+                    'value': 0,
+                    'type': 'gauge'
+                })
+                
+                metrics.append({
+                    'name': 'xray_service_faults_count',
+                    'labels': {'service': service_name},
+                    'value': 0,
+                    'type': 'gauge'
+                })
+                
+                metrics.append({
+                    'name': 'xray_service_throttles_count',
+                    'labels': {'service': service_name},
+                    'value': 0,
+                    'type': 'gauge'
+                })
+            
+            return metrics
 
         # Giới hạn số lượng trace nếu đã cấu hình max_traces
         if self.max_traces and len(traces) > self.max_traces:
@@ -133,24 +174,15 @@ class XRayMetricsCollector:
 
         # Xử lý trace data thành metrics
         metrics = self.processor.process_trace_data(
-            traces, start_time, end_time, self.counter_values
+            traces, start_time, end_time, self.counter_values, self.gauge_values
         )
 
         # Cập nhật timestamp
         self.storage.save_last_timestamp(end_time)
         self.last_timestamp = end_time
 
-        # Lưu danh sách trace IDs đã xử lý
-        self.storage.save_processed_trace_ids(self.processed_trace_ids)
-
         # Lưu giá trị counters
         self.storage.save_counter_values(self.counter_values)
 
         logger.info(f"Generated {len(metrics)} metrics")
         return metrics
-
-    def format_metrics_for_prometheus(self, metrics):
-        """
-        Chuyển đổi metrics thành định dạng Prometheus
-        """
-        return self.formatter.format_metrics_for_prometheus(metrics)
