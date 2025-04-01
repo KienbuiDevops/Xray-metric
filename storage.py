@@ -31,6 +31,20 @@ class StateStorage:
         self.processed_trace_ids_file = os.path.join(self.data_dir, 'processed_trace_ids.pickle')
         self.counter_values_file = os.path.join(self.data_dir, 'counter_values.pickle')
     
+    def cleanup_processed_trace_ids(self, max_age_hours=24):
+        """
+        Làm sạch danh sách trace IDs đã xử lý, giữ lại chỉ các ID mới
+        
+        :param max_age_hours: Số giờ tối đa để giữ lại trace IDs (không dùng vì không có timestamp)
+        """
+        logger.info("Cleaning up processed trace IDs")
+        
+        try:
+            # Đơn giản là xóa hết và bắt đầu lại
+            logger.info("Clearing processed trace IDs")
+            self.save_processed_trace_ids(set())
+        except Exception as e:
+            logger.error(f"Error cleaning up processed trace IDs: {str(e)}")
     def load_last_timestamp(self, time_window_minutes):
         """
         Tải timestamp của lần chạy cuối cùng
@@ -85,9 +99,10 @@ class StateStorage:
         """
         try:
             # Giới hạn kích thước của set để tránh quá lớn
-            if len(processed_trace_ids) > 100000:
-                # Giữ lại 50000 trace IDs gần đây nhất
-                processed_trace_ids = set(list(processed_trace_ids)[-50000:])
+            if len(processed_trace_ids) > 1000000:  # Tăng giới hạn từ 100,000 lên 1,000,000
+                # Giữ lại 500,000 trace IDs gần đây nhất (nếu có thể xác định thứ tự thêm vào)
+                processed_trace_ids = set(list(processed_trace_ids)[-500000:])
+                logger.warning(f"Limited processed_trace_ids size to 500,000 entries")
             
             with open(self.processed_trace_ids_file, 'wb') as f:
                 pickle.dump(processed_trace_ids, f)

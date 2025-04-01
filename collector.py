@@ -12,22 +12,40 @@ from processors import TraceProcessor, MetricsFormatter
 logger = logging.getLogger('xray-exporter.collector')
 
 class XRayMetricsCollector:
-    def __init__(self, region=None, profile=None, time_window_minutes=1, data_dir=None):
+    def __init__(self, region=None, profile=None, time_window_minutes=1, data_dir=None, 
+                max_traces=None, parallel_workers=20, batch_size=5, retry_attempts=3,
+                force_full_collection=False):
         """
-        Khởi tạo X-Ray Metrics Collector
-
+        Khởi tạo X-Ray Metrics Collector với các tùy chọn nâng cao
+        
         :param region: AWS Region
         :param profile: AWS Profile name
         :param time_window_minutes: Time window in minutes to fetch X-Ray data
         :param data_dir: Directory to store state data
+        :param max_traces: Maximum number of traces to process per run
+        :param parallel_workers: Number of parallel workers for trace processing
+        :param batch_size: Batch size for API calls
+        :param retry_attempts: Number of retry attempts for API calls
+        :param force_full_collection: Ignore processed trace IDs for this run
         """
         self.time_window_minutes = time_window_minutes
+        self.max_traces = max_traces
+        self.parallel_workers = parallel_workers
+        self.batch_size = batch_size
+        self.retry_attempts = retry_attempts
+        self.force_full_collection = force_full_collection
 
         # Khởi tạo storage để lưu/đọc trạng thái
         self.storage = StateStorage(data_dir=data_dir)
 
-        # Khởi tạo processor xử lý dữ liệu trace
-        self.processor = TraceProcessor(region=region, profile=profile)
+        # Khởi tạo processor xử lý dữ liệu trace với các tùy chọn mới
+        self.processor = TraceProcessor(
+            region=region, 
+            profile=profile,
+            batch_size=self.batch_size,
+            parallel_workers=self.parallel_workers,
+            retry_attempts=self.retry_attempts
+        )
 
         # Khởi tạo formatter để format metrics cho Prometheus
         self.formatter = MetricsFormatter()
@@ -36,13 +54,18 @@ class XRayMetricsCollector:
         self.metrics_cache = []
         self.last_update = datetime.min
         self.cache_lock = threading.Lock()
-        self.cache_ttl_seconds = 20  # Refresh metrics every 1 minute
+        self.cache_ttl_seconds = 60  # Refresh metrics every 1 minute
 
         # Đọc timestamp của lần chạy trước
         self.last_timestamp = self.storage.load_last_timestamp(self.time_window_minutes)
 
         # Set để lưu trace IDs đã xử lý
-        self.processed_trace_ids = self.storage.load_processed_trace_ids()
+        if self.force_full_collection:
+            # Nếu force full collection, bắt đầu với set rỗng
+            self.processed_trace_ids = set()
+            logger.info("Forced full collection mode enabled - ignoring previously processed trace IDs")
+        else:
+            self.processed_trace_ids = self.storage.load_processed_trace_ids()
 
         # Dictionary để lưu giá trị counter
         self.counter_values = self.storage.load_counter_values()
@@ -50,6 +73,7 @@ class XRayMetricsCollector:
         logger.info(f"Initialized collector with time window: {time_window_minutes} minute(s)")
         logger.info(f"Last timestamp: {self.last_timestamp}")
         logger.info(f"Number of processed trace IDs: {len(self.processed_trace_ids)}")
+        logger.info(f"Advanced options: max_traces={max_traces}, parallel_workers={parallel_workers}, batch_size={batch_size}")
 
     def get_metrics(self):
         """
@@ -81,12 +105,12 @@ class XRayMetricsCollector:
         end_time = datetime.utcnow()
         start_time = self.last_timestamp
 
-        # Đảm bảo khoảng thời gian không quá lớn để tránh quá tải
-        max_time_window = self.time_window_minutes * 60 * 5  # 5 lần time_window
+        # Tăng thời gian tối đa có thể query
+        max_time_window = self.time_window_minutes * 60 * 10  # Tăng từ 5 lên 10 lần time_window
         if (end_time - start_time).total_seconds() > max_time_window:
             logger.warning(f"Time window too large ({(end_time - start_time).total_seconds() / 60} minutes), "
-                         f"limiting to {self.time_window_minutes * 5} minutes")
-            start_time = end_time - timedelta(minutes=self.time_window_minutes * 5)
+                        f"limiting to {self.time_window_minutes * 10} minutes")
+            start_time = end_time - timedelta(minutes=self.time_window_minutes * 10)
 
         logger.info(f"Collecting data from {start_time} to {end_time}")
 
@@ -100,7 +124,12 @@ class XRayMetricsCollector:
             self.last_timestamp = end_time
             return []
 
-        logger.info(f"Collected {len(traces)} traces")
+        # Giới hạn số lượng trace nếu đã cấu hình max_traces
+        if self.max_traces and len(traces) > self.max_traces:
+            logger.info(f"Limiting processing to {self.max_traces} traces out of {len(traces)}")
+            traces = traces[:self.max_traces]
+        else:
+            logger.info(f"Processing all {len(traces)} collected traces")
 
         # Xử lý trace data thành metrics
         metrics = self.processor.process_trace_data(

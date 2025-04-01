@@ -18,7 +18,7 @@ logger = logging.getLogger('xray-exporter')
 
 def main():
     """
-    Entrypoint cho script
+    Entrypoint cho script với các tùy chọn tối ưu
     """
     parser = argparse.ArgumentParser(description='X-Ray Prometheus Exporter')
     parser.add_argument('--port', type=int, help='Port to listen on', default=9092)
@@ -28,19 +28,37 @@ def main():
     parser.add_argument('--data-dir', type=str, help='Directory to store state data', default=None)
     parser.add_argument('--log-level', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                       help='Log level', default='INFO')
+    
+    # Thêm tùy chọn mới
+    parser.add_argument('--max-traces', type=int, help='Maximum number of traces to process per run', default=None)
+    parser.add_argument('--parallel-workers', type=int, help='Number of parallel workers for trace processing', default=20)
+    parser.add_argument('--batch-size', type=int, help='Batch size for API calls', default=5)
+    parser.add_argument('--retry-attempts', type=int, help='Number of retry attempts for API calls', default=3)
+    parser.add_argument('--clean-trace-ids', action='store_true', help='Clean up old processed trace IDs')
+    parser.add_argument('--force-full-collection', action='store_true', help='Ignore processed trace IDs for this run')
 
     args = parser.parse_args()
 
     # Thiết lập log level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
 
-    # Khởi tạo collector
+    # Khởi tạo collector với các tùy chọn mở rộng
     collector = XRayMetricsCollector(
         region=args.region,
         profile=args.profile,
         time_window_minutes=args.time_window,
-        data_dir=args.data_dir
+        data_dir=args.data_dir,
+        max_traces=args.max_traces,
+        parallel_workers=args.parallel_workers,
+        batch_size=args.batch_size,
+        retry_attempts=args.retry_attempts,
+        force_full_collection=args.force_full_collection
     )
+
+    # Làm sạch processed trace IDs nếu được yêu cầu
+    if args.clean_trace_ids:
+        collector.storage.cleanup_processed_trace_ids()
+        logger.info("Cleaned up processed trace IDs")
 
     # Khởi tạo metrics ban đầu
     try:
@@ -54,6 +72,7 @@ def main():
 
     logger.info(f"Starting X-Ray Prometheus Exporter on port {args.port}")
     logger.info(f"Configuration: region={args.region or 'default'}, time-window={args.time_window}m")
+    logger.info(f"Advanced options: max_traces={args.max_traces}, parallel={args.parallel_workers}, batch={args.batch_size}")
     logger.info(f"Metrics endpoint: http://localhost:{args.port}/metrics")
 
     try:

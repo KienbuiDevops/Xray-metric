@@ -10,43 +10,58 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger('xray-exporter.processors')
 
 class TraceProcessor:
-    def __init__(self, region=None, profile=None):
+    def __init__(self, region=None, profile=None, batch_size=5, parallel_workers=20, retry_attempts=3):
         """
         Khởi tạo processor để xử lý dữ liệu X-Ray
-
+        
         :param region: AWS Region
         :param profile: AWS Profile name
+        :param batch_size: Kích thước batch cho API calls
+        :param parallel_workers: Số lượng worker cho xử lý song song
+        :param retry_attempts: Số lần thử lại nếu API fails
         """
         # Khởi tạo AWS session
         session = boto3.Session(profile_name=profile, region_name=region)
         self.xray_client = session.client('xray')
+        self.batch_size = batch_size
+        self.parallel_workers = parallel_workers
+        self.retry_attempts = retry_attempts
 
     def get_traces(self, start_time, end_time, processed_trace_ids):
         """
-        Lấy traces từ X-Ray trong khoảng thời gian chỉ định
-
+        Lấy traces từ X-Ray trong khoảng thời gian chỉ định với tối ưu để thu thập đầy đủ hơn
+        
         :param start_time: Thời gian bắt đầu thu thập
         :param end_time: Thời gian kết thúc thu thập
         :param processed_trace_ids: Set chứa các trace ID đã xử lý
         :return: List các traces
         """
-        logger.info("Retrieving trace summaries")
-
+        logger.info(f"Retrieving trace summaries from {start_time} to {end_time}")
+        
         try:
             # Lấy trace summaries
             paginator = self.xray_client.get_paginator('get_trace_summaries')
             trace_summaries = []
-
+            
+            # Tăng kích thước trang để nhận nhiều trace hơn mỗi lần gọi
+            page_size = 1000  # Tăng từ mặc định
+            
             for page in paginator.paginate(
                 StartTime=start_time,
                 EndTime=end_time,
                 TimeRangeType='TraceId',
-                Sampling=False  # Lấy tất cả traces, không sampling
+                Sampling=False,  # Không dùng sampling để lấy tất cả trace
+                PaginationConfig={
+                    'MaxItems': None,  # Không giới hạn tổng số items
+                    'PageSize': page_size  # Tăng kích thước trang
+                }
             ):
-                trace_summaries.extend(page.get('TraceSummaries', []))
-
-            logger.info(f"Retrieved {len(trace_summaries)} trace summaries")
-
+                batch_summaries = page.get('TraceSummaries', [])
+                trace_summaries.extend(batch_summaries)
+                logger.info(f"Retrieved {len(batch_summaries)} trace summaries in this page")
+            
+            logger.info(f"Retrieved total {len(trace_summaries)} trace summaries")
+            
             # Lọc ra các trace chưa được xử lý
             new_trace_ids = []
             for summary in trace_summaries:
@@ -54,46 +69,59 @@ class TraceProcessor:
                 if trace_id not in processed_trace_ids:
                     new_trace_ids.append(trace_id)
                     processed_trace_ids.add(trace_id)
-
-            logger.info(f"Found {len(new_trace_ids)} new traces to process")
-
+            
+            logger.info(f"Found {len(new_trace_ids)} new traces to process out of {len(trace_summaries)} total traces")
+            
             if not new_trace_ids:
                 return []
-
+            
             # Lấy chi tiết traces cho các trace ID mới
             return self.get_trace_details(new_trace_ids)
-
+            
         except ClientError as e:
             logger.error(f"Error retrieving trace summaries: {str(e)}")
             return []
-
     def get_trace_details(self, trace_ids):
         """
-        Lấy chi tiết đầy đủ của traces từ trace IDs
-
+        Lấy chi tiết đầy đủ của traces từ trace IDs với hiệu suất tối ưu
+        
         :param trace_ids: List các trace ID cần lấy chi tiết
         :return: List các traces với thông tin đầy đủ
         """
         logger.info(f"Retrieving details for {len(trace_ids)} traces")
-
+        
         # X-Ray API chỉ cho phép lấy tối đa 5 traces mỗi lần gọi
         batch_size = 5
         all_traces = []
-
-        for i in range(0, len(trace_ids), batch_size):
-            batch = trace_ids[i:i + batch_size]
+        
+        # Tối ưu: Sử dụng đa luồng để tăng tốc độ
+        import concurrent.futures
+        
+        def fetch_batch(batch):
             try:
                 response = self.xray_client.batch_get_traces(TraceIds=batch)
-                all_traces.extend(response.get('Traces', []))
-
-                # Tránh rate limit
-                if i + batch_size < len(trace_ids):
-                    time.sleep(0.1)  # 100ms delay giữa các batch
-
+                return response.get('Traces', [])
             except ClientError as e:
-                logger.error(f"Error retrieving trace details for batch {i//batch_size}: {str(e)}")
-                # Tiếp tục với các batch khác
-
+                logger.error(f"Error retrieving trace details for batch {batch}: {str(e)}")
+                return []
+        
+        # Chia trace_ids thành các batch
+        batches = [trace_ids[i:i+batch_size] for i in range(0, len(trace_ids), batch_size)]
+        logger.info(f"Split into {len(batches)} batches for parallel processing")
+        
+        # Sử dụng ThreadPoolExecutor để xử lý song song các batch
+        # Giới hạn số luồng để tránh quá tải API
+        max_workers = min(20, len(batches))  # Tối đa 20 luồng hoặc số lượng batches
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            batch_results = list(executor.map(fetch_batch, batches))
+        
+        # Gộp kết quả
+        for result in batch_results:
+            all_traces.extend(result)
+        
+        logger.info(f"Successfully retrieved {len(all_traces)} traces in detail")
+        
         return all_traces
 
     def process_trace_data(self, traces, start_time, end_time, counter_values):
