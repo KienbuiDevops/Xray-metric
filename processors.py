@@ -29,7 +29,7 @@ class TraceProcessor:
 
     def get_traces(self, start_time, end_time, processed_trace_ids):
         """
-        Lấy traces từ X-Ray trong khoảng thời gian chỉ định với tối ưu để thu thập đầy đủ hơn
+        Lấy traces từ X-Ray trong khoảng thời gian chỉ định
         
         :param start_time: Thời gian bắt đầu thu thập
         :param end_time: Thời gian kết thúc thu thập
@@ -43,18 +43,12 @@ class TraceProcessor:
             paginator = self.xray_client.get_paginator('get_trace_summaries')
             trace_summaries = []
             
-            # Tăng kích thước trang để nhận nhiều trace hơn mỗi lần gọi
-            page_size = 1000  # Tăng từ mặc định
-            
+            # Sử dụng pagination mà không chỉ định PageSize
             for page in paginator.paginate(
                 StartTime=start_time,
                 EndTime=end_time,
                 TimeRangeType='TraceId',
-                Sampling=False,  # Không dùng sampling để lấy tất cả trace
-                PaginationConfig={
-                    'MaxItems': None,  # Không giới hạn tổng số items
-                    'PageSize': page_size  # Tăng kích thước trang
-                }
+                Sampling=False  # Không dùng sampling để lấy tất cả trace
             ):
                 batch_summaries = page.get('TraceSummaries', [])
                 trace_summaries.extend(batch_summaries)
