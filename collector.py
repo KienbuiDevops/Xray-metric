@@ -14,7 +14,7 @@ logger = logging.getLogger('xray-exporter.collector')
 class XRayMetricsCollector:
     def __init__(self, region=None, profile=None, time_window_minutes=1, data_dir=None, 
                 max_traces=None, parallel_workers=20, batch_size=5, retry_attempts=3,
-                force_full_collection=False, max_trace_ids=1000000, retention_days=30):
+                force_full_collection=False, max_trace_ids=1000000, retention_days=30, gauge_values=None):
         """
         Khởi tạo X-Ray Metrics Collector với các tùy chọn nâng cao
         
@@ -214,3 +214,8 @@ class XRayMetricsCollector:
 
         logger.info(f"Generated {len(metrics)} metrics")
         return metrics
+    def format_metrics_for_prometheus(self, metrics):
+        """
+        Chuyển đổi metrics thành định dạng Prometheus
+        """
+        return self.formatter.format_metrics_for_prometheus(metrics)
